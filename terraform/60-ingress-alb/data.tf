@@ -14,3 +14,9 @@ data "aws_ssm_parameter" "vpc_id" {
 data "aws_ssm_parameter" "acm_certificate_arn" {
   name = "/${var.project_name}/${var.environment}/acm_certificate_arn"
 }
+
+# SNS topic ARN — written by 70-monitoring layer
+# Apply 70-monitoring BEFORE re-applying 60-ingress-alb
+data "aws_ssm_parameter" "sns_alerts_arn" {
+  name = "/${var.project_name}/${var.environment}/sns_alerts_arn"
+}

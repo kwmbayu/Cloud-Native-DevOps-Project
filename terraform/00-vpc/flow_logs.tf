@@ -137,9 +137,17 @@ resource "aws_cloudwatch_metric_alarm" "high_rejected_connections" {
   threshold           = 100
   treat_missing_data  = "notBreaching"  # no data = no alarm (don't alert when VPC is quiet)
 
-  # To get email alerts, create an SNS topic and add its ARN here:
-  # alarm_actions = ["arn:aws:sns:us-east-1:258464457244:security-alerts"]
-  alarm_actions = []
+  # SNS topic created in 70-monitoring layer — wired in here so security
+  # alerts land in the same inbox as all other application alerts.
+  alarm_actions = [data.aws_ssm_parameter.sns_alerts_arn.value]
+  ok_actions    = [data.aws_ssm_parameter.sns_alerts_arn.value]
 
   tags = var.common_tags
+}
+
+# ── SNS TOPIC ARN (from 70-monitoring layer) ─────────────────
+# Reads the SNS topic ARN stored by the 70-monitoring layer.
+# Apply 70-monitoring BEFORE re-applying 00-vpc.
+data "aws_ssm_parameter" "sns_alerts_arn" {
+  name = "/${var.project_name}/${var.environment}/sns_alerts_arn"
 }

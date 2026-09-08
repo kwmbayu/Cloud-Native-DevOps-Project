@@ -188,8 +188,8 @@ resource "aws_cloudwatch_metric_alarm" "waf_blocked_requests" {
   }
 
   # To get email/SMS alerts, add an SNS topic ARN here:
-  # alarm_actions = ["arn:aws:sns:us-east-1:258464457244:security-alerts"]
-  alarm_actions = []
+  alarm_actions = [data.aws_ssm_parameter.sns_alerts_arn.value]
+  ok_actions    = [data.aws_ssm_parameter.sns_alerts_arn.value]
 
   tags = var.common_tags
 }
