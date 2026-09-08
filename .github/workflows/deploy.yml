@@ -63,13 +63,13 @@ jobs:
 
       # ── Step 2: Install Node.js ──────────────────────────
       # The runner is a bare Linux machine — it doesn't have Node.
-      # This installs Node 20 and caches npm packages so the
-      # next run is faster (no re-downloading the same packages).
-      - name: Set up Node.js 20
+      # This installs Node 22 (LTS) so the app can run.
+      # Note: no cache: 'npm' here because the project doesn't have
+      # a package-lock.json file yet (npm caching requires one).
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       # ── Step 3: Install app dependencies ─────────────────
       # Reads package.json and downloads all the libraries
