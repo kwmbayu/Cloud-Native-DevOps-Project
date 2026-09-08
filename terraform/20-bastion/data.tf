@@ -7,24 +7,21 @@ data "aws_ssm_parameter" "public_subnet_ids" {
 }
 
 data "aws_ami" "ami_info" {
+  most_recent = true
+  owners      = ["amazon"]
 
-    most_recent = true
-    owners = ["973714476881"]
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
 
-    filter {
-        name   = "name"
-        values = ["RHEL-9-DevOps-Practice"]
-    }
+  filter {
+    name   = "root-device-type"
+    values = ["ebs"]
+  }
 
-    filter {
-        name   = "root-device-type"
-        values = ["ebs"]
-    }
-
-    filter {
-        name   = "virtualization-type"
-        values = ["hvm"]
-    }
-
-   
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
 }

@@ -1,0 +1,11 @@
+# Terraform downloaded plugins & modules (large binaries, not needed in git)
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Sensitive files
+*.pem
+*.key
+*.env
+terraform.tfvars

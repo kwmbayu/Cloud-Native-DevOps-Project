@@ -63,23 +63,5 @@ module "db" {
  
 }
 
-# create R53 record for RDS endpoint
-
-module "records" {
-  source  = "terraform-aws-modules/route53/aws//modules/records"
-  version = "~> 2.0"
-
-  zone_name = var.zone_name
-  
-  records = [
-    {
-      name    = "db-${var.environment}"
-      type    = "CNAME"
-      ttl = 1
-      allow_overwrite = true
-      records = [
-        module.db.db_instance_address
-      ]
-    }
-  ]
-}
+# Route53 record removed -- no domain configured
+# Connect to RDS using the endpoint address directly

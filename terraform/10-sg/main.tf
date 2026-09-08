@@ -1,161 +1,189 @@
-module "db" {
-  source = "https://github.com/eswar-sai-kumar/terraform-aws-securitygroups.git"
-  project_name = var.project_name
-  environment = var.environment
-  sg_description = "SG for DB MySQL Instances"
+locals {
   vpc_id = data.aws_ssm_parameter.vpc_id.value
-  common_tags = var.common_tags
-  sg_name = "db"
 }
 
-module "ingress" {
-  source         = "git::https://github.com/eswar-sai-kumar/terraform-aws-securitygroups.git"
-  project_name = var.project_name
-  environment = var.environment
-  sg_description = "SG for Ingress controller"
-  vpc_id = data.aws_ssm_parameter.vpc_id.value
-  common_tags = var.common_tags
-  sg_name = "ingress"
+# --- DB Security Group ---
+resource "aws_security_group" "db" {
+  name        = "${var.project_name}-${var.environment}-db"
+  description = "SG for DB MySQL Instances"
+  vpc_id      = local.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-db" })
 }
 
-module "cluster" {
-  source         = "git::https://github.com/eswar-sai-kumar/terraform-aws-securitygroups.git"
-  project_name = var.project_name
-  environment = var.environment
-  sg_description = "SG for EKS Control plane"
-  vpc_id = data.aws_ssm_parameter.vpc_id.value
-  common_tags = var.common_tags
-  sg_name = "eks-control-plane"
+# --- Bastion Security Group ---
+resource "aws_security_group" "bastion" {
+  name        = "${var.project_name}-${var.environment}-bastion"
+  description = "SG for Bastion Instances"
+  vpc_id      = local.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-bastion" })
 }
 
-module "node" {
-  source         = "git::https://github.com/eswar-sai-kumar/terraform-aws-securitygroups.git"
-  project_name = var.project_name
-  environment = var.environment
-  sg_description = "SG for EKS node"
-  vpc_id = data.aws_ssm_parameter.vpc_id.value
-  common_tags = var.common_tags
-  sg_name = "eks-node"
+# --- VPN Security Group ---
+resource "aws_security_group" "vpn" {
+  name        = "${var.project_name}-${var.environment}-vpn"
+  description = "SG for VPN Instances"
+  vpc_id      = local.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-vpn" })
 }
 
-module "bastion" {
-  source = "https://github.com/eswar-sai-kumar/terraform-aws-securitygroups.git"
-  project_name = var.project_name
-  environment = var.environment
-  sg_description = "SG for Bastion Instances"
-  vpc_id = data.aws_ssm_parameter.vpc_id.value
-  common_tags = var.common_tags
-  sg_name = "bastion"
+# --- EKS Control Plane Security Group ---
+resource "aws_security_group" "cluster" {
+  name        = "${var.project_name}-${var.environment}-eks-control-plane"
+  description = "SG for EKS Control plane"
+  vpc_id      = local.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-eks-control-plane" })
 }
 
-module "vpn" {
-  source = "https://github.com/eswar-sai-kumar/terraform-aws-securitygroups.git"
-  project_name = var.project_name
-  environment = var.environment
-  sg_description = "SG for VPN Instances"
-  vpc_id = data.aws_ssm_parameter.vpc_id.value
-  common_tags = var.common_tags
-  sg_name = "vpn"
-  ingress_rules = var.vpn_sg_rules
+# --- EKS Node Security Group ---
+resource "aws_security_group" "node" {
+  name        = "${var.project_name}-${var.environment}-eks-node"
+  description = "SG for EKS node"
+  vpc_id      = local.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-eks-node" })
 }
+
+# --- Ingress ALB Security Group ---
+resource "aws_security_group" "ingress" {
+  name        = "${var.project_name}-${var.environment}-ingress"
+  description = "SG for Ingress controller"
+  vpc_id      = local.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-ingress" })
+}
+
+# --- Security Group Rules ---
 
 resource "aws_security_group_rule" "bastion_public" {
   type              = "ingress"
   from_port         = 22
   to_port           = 22
   protocol          = "tcp"
-  cidr_blocks = ["0.0.0.0/0"]
-  security_group_id = module.bastion.sg_id
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.bastion.id
 }
 
-# EKS cluster can be accessed from bastion host
 resource "aws_security_group_rule" "cluster_bastion" {
-  type              = "ingress"
-  from_port         = 443
-  to_port           = 443
-  protocol          = "tcp"
-  source_security_group_id = module.bastion.sg_id
-  security_group_id = module.cluster.sg_id
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.cluster.id
 }
 
-# EKS control plane accepting all traffic from nodes
 resource "aws_security_group_rule" "cluster_node" {
-  type              = "ingress"
-  from_port         = 0
-  to_port           = 65535
-  protocol          = "-1" # All traffic
-  source_security_group_id = module.node.sg_id
-  security_group_id = module.cluster.sg_id
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 65535
+  protocol                 = "-1"
+  source_security_group_id = aws_security_group.node.id
+  security_group_id        = aws_security_group.cluster.id
 }
 
-
-# EKS nodes accepting all traffic from control plane
 resource "aws_security_group_rule" "node_cluster" {
-  type              = "ingress"
-  from_port         = 0
-  to_port           = 65535
-  protocol          = "-1" # All traffic
-  source_security_group_id = module.cluster.sg_id
-  security_group_id = module.node.sg_id
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 65535
+  protocol                 = "-1"
+  source_security_group_id = aws_security_group.cluster.id
+  security_group_id        = aws_security_group.node.id
 }
 
-# EKS nodes should accept all traffic from nodes with in VPC CIDR range.
 resource "aws_security_group_rule" "node_vpc" {
   type              = "ingress"
   from_port         = 0
   to_port           = 65535
-  protocol          = "-1" # All traffic
-  cidr_blocks = ["10.0.0.0/16"]
-  security_group_id = module.node.sg_id
+  protocol          = "-1"
+  cidr_blocks       = ["10.0.0.0/16"]
+  security_group_id = aws_security_group.node.id
 }
 
-# RDS accepting connections from bastion
 resource "aws_security_group_rule" "db_bastion" {
-  type              = "ingress"
-  from_port         = 3306
-  to_port           = 3306
-  protocol          = "TCP" # All traffic
-  source_security_group_id = module.bastion.sg_id
-  security_group_id = module.db.sg_id
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion.id
+  security_group_id        = aws_security_group.db.id
 }
 
-# DB should accept connections from EKS nodes
 resource "aws_security_group_rule" "db_node" {
-  type              = "ingress"
-  from_port         = 3306
-  to_port           = 3306
-  protocol          = "TCP" # All traffic
-  source_security_group_id = module.node.sg_id
-  security_group_id = module.db.sg_id
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.node.id
+  security_group_id        = aws_security_group.db.id
 }
 
-# Ingress ALB accepting traffic on 443
 resource "aws_security_group_rule" "ingress_public_https" {
   type              = "ingress"
   from_port         = 443
   to_port           = 443
-  protocol          = "TCP" # All traffic
-  cidr_blocks = ["0.0.0.0/0"]
-  security_group_id = module.ingress.sg_id
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.ingress.id
 }
 
-# Ingress ALB accepting traffic on 80
 resource "aws_security_group_rule" "ingress_public_http" {
   type              = "ingress"
   from_port         = 80
   to_port           = 80
-  protocol          = "TCP" # All traffic
-  cidr_blocks = ["0.0.0.0/0"]
-  security_group_id = module.ingress.sg_id
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.ingress.id
 }
 
-#
 resource "aws_security_group_rule" "node_ingress" {
-  type              = "ingress"
-  from_port         = 30000
-  to_port           = 32768
-  protocol          = "TCP" # All traffic
-  source_security_group_id = module.ingress.sg_id
-  security_group_id = module.node.sg_id
+  type                     = "ingress"
+  from_port                = 30000
+  to_port                  = 32768
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.ingress.id
+  security_group_id        = aws_security_group.node.id
 }
 
+resource "aws_security_group_rule" "vpn_rules" {
+  count             = length(var.vpn_sg_rules)
+  type              = "ingress"
+  from_port         = var.vpn_sg_rules[count.index].from_port
+  to_port           = var.vpn_sg_rules[count.index].to_port
+  protocol          = var.vpn_sg_rules[count.index].protocol
+  cidr_blocks       = var.vpn_sg_rules[count.index].cidr_blocks
+  security_group_id = aws_security_group.vpn.id
+}
