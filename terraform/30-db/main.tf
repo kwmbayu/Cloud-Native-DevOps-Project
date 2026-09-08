@@ -30,12 +30,20 @@ module "db" {
   )
 
   manage_master_user_password = false
-  # Password is now managed by Secrets Manager (layer 85-secrets).
-  # Use a variable here so the password is never hardcoded in source code.
+  # password_wo = write-only: Terraform accepts the value but NEVER stores it
+  # in the state file or prints it in plan output. Safer than plain `password`.
   # Run: terraform apply -var="db_password=YourPassword"
   # Or set environment variable: export TF_VAR_db_password="YourPassword"
-  password = var.db_password
+  password_wo         = var.db_password
+  password_wo_version = 1   # increment this number to trigger a password rotation
   skip_final_snapshot = true
+
+  # ── ENCRYPTION AT REST ──────────────────────────────────
+  # All data on the RDS disk is encrypted with AES-256.
+  # Encryption can ONLY be enabled at creation time — not on a running instance.
+  # The KMS key is defined in kms.tf (custom key with rotation + audit trail).
+  storage_encrypted = true
+  kms_key_id        = aws_kms_key.rds.arn
 
   parameters = [
     {
