@@ -4,11 +4,7 @@ resource "aws_ssm_parameter" "db_sg_id" {
   value = aws_security_group.db.id
 }
 
-resource "aws_ssm_parameter" "bastion_sg_id" {
-  name  = "/${var.project_name}/${var.environment}/bastion_sg_id"
-  type  = "String"
-  value = aws_security_group.bastion.id
-}
+# bastion_sg_id removed — bastion replaced by SSM Session Manager (see docs/SSM_ACCESS.md)
 
 resource "aws_ssm_parameter" "vpn_sg_id" {
   name  = "/${var.project_name}/${var.environment}/vpn_sg_id"

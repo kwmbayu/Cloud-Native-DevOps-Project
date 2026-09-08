@@ -16,18 +16,21 @@ resource "aws_security_group" "db" {
   tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-db" })
 }
 
-# --- Bastion Security Group ---
-resource "aws_security_group" "bastion" {
-  name        = "${var.project_name}-${var.environment}-bastion"
-  description = "SG for Bastion Instances"
-  vpc_id      = local.vpc_id
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = merge(var.common_tags, { Name = "${var.project_name}-${var.environment}-bastion" })
+# --- Bastion Security Group — REMOVED ---
+# The bastion EC2 host has been replaced by AWS Systems Manager Session Manager.
+# SSM provides the same shell access with zero open ports and zero EC2 cost.
+#
+# Before: bastion EC2 + open SSH port → ~$8-15/month + security risk
+# After:  SSM Session Manager → $0, no open ports, access via IAM identity
+#
+# The bastion SG was an empty security group (all its ingress rules were
+# already removed when SSM was adopted). Removing the SG itself completes
+# the cleanup. If this layer was already applied, run:
+#   terraform -chdir=terraform/10-sg state rm aws_security_group.bastion
+#   terraform -chdir=terraform/10-sg state rm aws_ssm_parameter.bastion_sg_id
+# then re-apply 10-sg to remove the SG from AWS.
+#
+# See docs/SSM_ACCESS.md for how to connect to EKS nodes via SSM.
 }
 
 # --- VPN Security Group ---
