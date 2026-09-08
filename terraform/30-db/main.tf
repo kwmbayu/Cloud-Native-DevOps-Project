@@ -30,7 +30,11 @@ module "db" {
   )
 
   manage_master_user_password = false
-  password = "ExpenseApp1"
+  # Password is now managed by Secrets Manager (layer 85-secrets).
+  # Use a variable here so the password is never hardcoded in source code.
+  # Run: terraform apply -var="db_password=YourPassword"
+  # Or set environment variable: export TF_VAR_db_password="YourPassword"
+  password = var.db_password
   skip_final_snapshot = true
 
   parameters = [
