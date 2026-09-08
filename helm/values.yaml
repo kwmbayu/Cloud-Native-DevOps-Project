@@ -4,5 +4,12 @@ deployment:
 
 config:
   # Set this to the RDS endpoint after running: terraform apply (in terraform/30-db)
+  # Get value: terraform -chdir=terraform/30-db output -raw db_instance_address
   # Example: expense-dev.abc123xyz.us-east-1.rds.amazonaws.com
   dbHost: PLACEHOLDER_set_after_30_db_apply
+
+  # Set this to the ElastiCache Redis endpoint after: terraform apply (in terraform/35-redis)
+  # Get value: terraform -chdir=terraform/35-redis output -raw redis_host
+  # Example: expense-dev-redis.xxxxxx.0001.use1.cache.amazonaws.com
+  # Leave empty to disable caching (app falls back to direct MySQL queries):
+  redisHost: ""

@@ -15,3 +15,18 @@ data:
   #
   # Or update values.yaml with the RDS endpoint after terraform apply.
   DB_HOST: {{ .Values.config.dbHost }}
+
+  # ── REDIS_HOST (Performance Efficiency Pillar) ──────────────
+  # The ElastiCache Redis endpoint — set after applying terraform/35-redis.
+  #
+  # How to get this value after terraform apply:
+  #   terraform -chdir=terraform/35-redis output redis_host
+  # OR:
+  #   aws ssm get-parameter --name /expense/dev/redis_host --query Parameter.Value --output text
+  #
+  # When REDIS_HOST is set: the app caches GET /transaction results in Redis
+  #   → 5-minute TTL → next request served from Redis, 0 DB queries
+  # When REDIS_HOST is empty or missing: Redis is skipped, all reads hit MySQL
+  #   → safe fallback for local dev or if 35-redis hasn't been applied yet
+  REDIS_HOST: {{ .Values.config.redisHost | default "" }}
+  REDIS_PORT: "6379"
