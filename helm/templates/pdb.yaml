@@ -1,0 +1,35 @@
+# ============================================================
+# POD DISRUPTION BUDGET (PDB)
+#
+# What this does:
+#   Guarantees that at least 1 pod is always alive during:
+#     - SPOT instance interruptions (AWS takes the node back with 2 min warning)
+#     - Kubernetes node drain (during upgrades or maintenance)
+#     - Rolling deployments
+#
+# Think of it like a minimum staffing rule:
+#   "There must always be at least 1 person on the cash register."
+#   If you have 2 pods and one gets evicted, Kubernetes will NOT evict
+#   the second until a replacement is running.
+#
+# Without this, Kubernetes could drain all pods from a node simultaneously
+# during a SPOT interruption, taking the whole app offline.
+# ============================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: expense
+  labels:
+    component: backend
+    project: expense
+    tier: app
+spec:
+  # minAvailable: 1 = at least 1 pod must stay running at all times.
+  # Kubernetes will refuse to evict pods if it would drop below this number.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      component: backend
+      project: expense
+      tier: app

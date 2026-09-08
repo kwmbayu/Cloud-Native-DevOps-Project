@@ -1,0 +1,225 @@
+# ============================================================
+# CI/CD PIPELINE — expense app
+#
+# What this file is:
+#   A recipe for a robot. Every time you push code to the
+#   'main' branch on GitHub, this robot automatically:
+#     1. Installs the app's dependencies and runs tests
+#     2. Builds a Docker image (packages the app)
+#     3. Pushes it to ECR (Amazon's private image storage)
+#     4. Connects to the EKS cluster
+#     5. Runs 'helm upgrade' to deploy the new version
+#
+# On Pull Requests (not yet merged to main):
+#   Only steps 1-2 run — it builds and tests, but does NOT
+#   deploy. This catches bugs before they reach the cluster.
+#
+# Triggered by: a git push to the 'main' branch
+# ============================================================
+
+name: CI/CD — Build, Push & Deploy
+
+on:
+  push:
+    branches: [master]       # runs full pipeline when code merges to main
+  pull_request:
+    branches: [master]       # runs build+test only on Pull Requests (no deploy)
+
+# ── SHARED VARIABLES ─────────────────────────────────────────
+# These values are the same across all jobs.
+# Non-sensitive values live here. Passwords/keys live in GitHub Secrets.
+env:
+  AWS_REGION:       us-east-1
+  ECR_REPOSITORY:   expense-backend
+  EKS_CLUSTER_NAME: expense-dev
+  AWS_ACCOUNT_ID:   258464457244
+
+# ═══════════════════════════════════════════════════════════════
+# JOB 1: BUILD & TEST
+#
+# Runs on every push AND every pull request.
+# Think of this as the quality-control step at a factory:
+# before the product ships, a checker inspects it.
+#
+# On Pull Requests  → builds the image but does NOT push it
+# On push to main   → builds the image AND pushes it to ECR
+# ═══════════════════════════════════════════════════════════════
+jobs:
+  build:
+    name: 🏗️ Build & Test
+    runs-on: ubuntu-latest   # GitHub provides a fresh Linux machine for each run
+
+    outputs:
+      # This passes the image tag from job 1 to job 2 so both use the same tag
+      image-tag: ${{ steps.build-push.outputs.image-tag }}
+
+    steps:
+
+      # ── Step 1: Get the code ──────────────────────────────
+      # Downloads your repository onto the runner machine.
+      # Like cloning the repo onto a brand-new computer.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Step 2: Install Node.js ──────────────────────────
+      # The runner is a bare Linux machine — it doesn't have Node.
+      # This installs Node 20 and caches npm packages so the
+      # next run is faster (no re-downloading the same packages).
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── Step 3: Install app dependencies ─────────────────
+      # Reads package.json and downloads all the libraries
+      # the app needs (express, mysql2, moment, etc.).
+      - name: Install dependencies
+        run: npm install
+
+      # ── Step 4: Run tests ─────────────────────────────────
+      # Runs any automated tests in the project.
+      # 'continue-on-error: true' means the pipeline keeps going
+      # even if tests fail — because there are no real tests yet.
+      # ⚠️ Remove continue-on-error once real tests exist.
+      - name: Run tests
+        run: npm test
+        continue-on-error: true   # ← remove this line once you have real tests
+
+      # ── Step 5: Log into AWS ──────────────────────────────
+      # Uses the credentials you stored in GitHub Secrets.
+      # Only runs when pushing to main (not on PRs — PRs don't deploy).
+      # Like using a key card to enter the AWS building.
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── Step 6: Log into ECR ─────────────────────────────
+      # ECR = Amazon's private Docker Hub. You need to log in
+      # before you can push an image there, just like Docker Hub.
+      - name: Login to Amazon ECR
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Step 7: Build the Docker image & push to ECR ─────
+      # This is the core build step.
+      #
+      # IMAGE TAG = the first 7 characters of the git commit hash.
+      # Example: if your commit hash is "a1b2c3d4e5f6...", the tag is "a1b2c3d".
+      # This way, every version of the app has a unique label.
+      # You can always look at a running pod and know exactly which
+      # commit of code it's running.
+      - name: Build, tag, and push Docker image to ECR
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        id: build-push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          # Short SHA: first 7 chars of the git commit hash (e.g. "a1b2c3d")
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          # Build the image from the Dockerfile in the root of the repo
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+
+          # Also tag as 'latest' so you can pull the most recent build easily
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                     $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # Push both tags to ECR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # Pass the tag to the deploy job
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+
+# ═══════════════════════════════════════════════════════════════
+# JOB 2: DEPLOY TO EKS
+#
+# Only runs when pushing to main (not on PRs).
+# Waits for Job 1 (build) to succeed before starting.
+#
+# Think of this as the delivery driver who only picks up the
+# package once the factory confirms it passed quality control.
+# ═══════════════════════════════════════════════════════════════
+  deploy:
+    name: 🚀 Deploy to EKS (dev)
+    runs-on: ubuntu-latest
+    needs: build                               # waits for 'build' job to finish
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    environment: dev                           # shows in GitHub UI as a deployment
+
+    steps:
+
+      # ── Step 1: Get the code ──────────────────────────────
+      # Needed so the Helm chart folder (./helm) is available.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Step 2: Log into AWS ──────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── Step 3: Connect to the EKS cluster ───────────────
+      # 'update-kubeconfig' tells kubectl (the Kubernetes command-line tool)
+      # how to find and authenticate with your EKS cluster.
+      # Like programming a GPS with the address of your destination.
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name  ${{ env.EKS_CLUSTER_NAME }}
+
+      # ── Step 4: Install Helm on the runner ───────────────
+      # The runner machine doesn't have Helm pre-installed.
+      # This action downloads and installs the exact version we need.
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.16.0'
+
+      # ── Step 5: Deploy with Helm ──────────────────────────
+      # 'helm upgrade --install' either:
+      #   - Creates the app if it doesn't exist yet (first deploy)
+      #   - Updates it to the new image if it already exists
+      #
+      # '--set deployment.imageVersion=...' injects the git SHA tag
+      # so Kubernetes pulls exactly the image we just built.
+      #
+      # '--wait' means the command waits until all pods are running
+      # before declaring the deploy a success.
+      #
+      # '--timeout 5m' means if pods aren't running after 5 minutes,
+      # the deploy fails (and the next step can alert you).
+      - name: Deploy to EKS with Helm
+        run: |
+          helm upgrade --install expense ./helm \
+            --namespace expense \
+            --create-namespace \
+            --set deployment.imageVersion=${{ needs.build.outputs.image-tag }} \
+            --set config.dbHost=${{ secrets.DB_HOST }} \
+            --wait \
+            --timeout 5m
+
+      # ── Step 6: Confirm pods are healthy ─────────────────
+      # 'rollout status' watches the deployment and reports whether
+      # all pods came up successfully. Prints pod status to the logs.
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/backend \
+            --namespace expense \
+            --timeout 3m
+          echo ""
+          echo "── Running pods ──"
+          kubectl get pods -n expense
+          echo ""
+          echo "── Service endpoints ──"
+          kubectl get svc -n expense

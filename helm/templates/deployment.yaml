@@ -3,7 +3,6 @@ apiVersion: apps/v1
 metadata:
   name: backend
   namespace: expense
-  # these labels are deployment related labels
   labels:
     component: backend
     project: expense
@@ -15,7 +14,6 @@ spec:
       component: backend
       project: expense
       tier: app
-  # pod definition
   template:
     metadata:
       labels:
@@ -25,8 +23,49 @@ spec:
     spec:
       containers:
       - name: backend
-        imagePullPolicy: always
-        image: 315069654700.dkr.ecr.us-east-1.amazonaws.com/expense-backend:{{ .Values.deployment.imageVersion }}
+        imagePullPolicy: Always
+        image: 258464457244.dkr.ecr.us-east-1.amazonaws.com/expense-backend:{{ .Values.deployment.imageVersion }}
         envFrom:
         - configMapRef:
             name: backend
+
+        # ── RESOURCE REQUESTS & LIMITS (Reliability Pillar) ────
+        # Think of this like reserving a seat on a plane:
+        #   requests = the seat you are guaranteed (scheduler uses this to place pod)
+        #   limits   = the maximum you can ever use (prevents one pod hogging the node)
+        # Without these, one runaway pod can starve all other pods of memory.
+        resources:
+          requests:
+            cpu:    "250m"   # 250 millicores = ¼ of one CPU core
+            memory: "256Mi"  # 256 MB guaranteed
+          limits:
+            cpu:    "500m"   # never use more than ½ a CPU core
+            memory: "512Mi"  # never use more than 512 MB
+
+        # ── LIVENESS PROBE (Reliability Pillar) ────────────────
+        # Like a security guard checking every 10 seconds: "are you alive?"
+        # If the app freezes or deadlocks and stops responding,
+        # Kubernetes restarts the container automatically.
+        # Without this, a crashed app stays "Running" but serves no traffic.
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30   # wait 30s after start before first check
+          periodSeconds:       10   # check every 10 seconds
+          timeoutSeconds:      5    # must respond within 5 seconds
+          failureThreshold:    3    # 3 consecutive failures → restart container
+
+        # ── READINESS PROBE (Reliability Pillar) ───────────────
+        # Like a restaurant hostess checking: "is the table ready for guests?"
+        # Kubernetes only sends real traffic to pods that PASS this check.
+        # During startup (app connecting to DB, warming up), no traffic is sent.
+        # During a deployment, old pods get traffic until new ones are ready.
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 20   # give the app 20s to start up
+          periodSeconds:       10   # check every 10 seconds
+          timeoutSeconds:      5
+          failureThreshold:    3    # 3 consecutive failures → stop sending traffic

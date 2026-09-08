@@ -4,4 +4,14 @@ metadata:
   name: backend
   namespace: expense
 data:
-  DB_HOST: db-dev.eswarsaikumar.site
+  # ── DB_HOST (Reliability Pillar) ────────────────────────────
+  # The RDS endpoint is set at deploy time via Helm values.
+  # This replaces the old hardcoded value (db-dev.eswarsaikumar.site)
+  # which pointed to an expired domain.
+  #
+  # How to set this when deploying:
+  #   helm upgrade --install expense ./helm \
+  #     --set config.dbHost=$(terraform -chdir=terraform/30-db output -raw db_instance_address)
+  #
+  # Or update values.yaml with the RDS endpoint after terraform apply.
+  DB_HOST: {{ .Values.config.dbHost }}

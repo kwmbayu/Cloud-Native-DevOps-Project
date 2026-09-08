@@ -8,7 +8,12 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: backend
-  minReplicas: 1
+  # ── RELIABILITY: minimum 2 pods always running ─────────────
+  # With minReplicas: 1, at quiet times the HPA can scale down to
+  # a single pod — one crash takes the app down completely.
+  # With 2, if one pod crashes or gets evicted, the other keeps serving traffic
+  # while Kubernetes starts a replacement.
+  minReplicas: 2
   maxReplicas: 10
   metrics:
   - type: Resource

@@ -1,3 +1,8 @@
 deployment:
-  imageVersion: IMAGE_VERSION # this is called placeholder
-  replicas: 2
+  imageVersion: IMAGE_VERSION   # replaced by CI/CD at deploy time
+  replicas: 2                   # starting replicas (HPA takes over once cluster metrics flow)
+
+config:
+  # Set this to the RDS endpoint after running: terraform apply (in terraform/30-db)
+  # Example: expense-dev.abc123xyz.us-east-1.rds.amazonaws.com
+  dbHost: PLACEHOLDER_set_after_30_db_apply

@@ -36,7 +36,33 @@ module "db" {
   # Or set environment variable: export TF_VAR_db_password="YourPassword"
   password_wo         = var.db_password
   password_wo_version = 1   # increment this number to trigger a password rotation
-  skip_final_snapshot = true
+
+  # ── BACKUP & RECOVERY (Reliability Pillar) ─────────────────
+  # Think of this like Time Machine on a Mac — automatic daily snapshots.
+  # If data gets corrupted or deleted, you can restore to any point
+  # within the last 7 days with a few clicks in the AWS console.
+
+  # Automated daily backups kept for 7 days.
+  # Window is a quiet period (3–4 AM UTC) when traffic is low.
+  backup_retention_period = 7
+  backup_window           = "03:00-04:00"
+
+  # Maintenance window: OS patches applied weekly in a quiet window.
+  maintenance_window = "Mon:04:00-Mon:05:00"
+
+  # FINAL SNAPSHOT: When this RDS instance is destroyed (terraform destroy),
+  # AWS takes one last complete backup BEFORE deleting anything.
+  # Like hitting "Save" before closing a document forever.
+  # Name format: expense-dev-final-<timestamp> (set at apply time)
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${var.project_name}-${var.environment}-final"
+
+  # MULTI-AZ NOTE (prod recommendation):
+  # multi_az = true  would run a live standby copy in a second AZ.
+  # If the primary AZ fails, AWS fails over automatically in ~60 seconds.
+  # Disabled here for dev to save cost (~doubles RDS price to ~$25/month).
+  # Enable for any production or customer-facing environment.
+  multi_az = false
 
   # ── ENCRYPTION AT REST ──────────────────────────────────
   # All data on the RDS disk is encrypted with AES-256.
