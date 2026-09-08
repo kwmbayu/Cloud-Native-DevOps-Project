@@ -1,0 +1,58 @@
+# ============================================================
+# RBAC — KUBERNETES PERMISSIONS FOR FLUENT BIT
+#
+# What RBAC is:
+#   RBAC = Role-Based Access Control.
+#   Inside Kubernetes, pods can't automatically read cluster information.
+#   It's like a new employee — they need a key card to access the filing room.
+#
+# Why Fluent Bit needs this:
+#   The Fluent Bit FILTER step adds Kubernetes metadata to every log line:
+#   pod name, namespace, labels, etc. To do that, it queries the Kubernetes API.
+#   Without these permissions, that query would be rejected with "403 Forbidden"
+#   and the filter step would silently fail — logs would still ship, but without
+#   the metadata that makes them searchable in CloudWatch.
+#
+# What we're creating:
+#   ClusterRole     — defines WHAT Fluent Bit is allowed to read
+#   ClusterRoleBinding — says WHICH service account gets those permissions
+# ============================================================
+
+# ── CLUSTERROLE — THE LIST OF PERMISSIONS ─────────────────
+# Read-only access to pods, namespaces, and nodes.
+# Fluent Bit never needs to create, update, or delete anything in Kubernetes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluent-bit
+  labels:
+    app: fluent-bit
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces   # list all namespaces (so it knows expense, kube-system, etc.)
+      - pods         # read pod metadata (name, labels, owner)
+    verbs:
+      - get
+      - list
+      - watch        # watch = get notified when pods are added/removed
+
+---
+# ── CLUSTERROLEBINDING — WHO GETS THE PERMISSIONS ─────────
+# Bind the ClusterRole above to the "fluent-bit" ServiceAccount
+# in the "logging" namespace.
+# This is the handshake: "the fluent-bit service account gets the fluent-bit role's permissions"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fluent-bit
+  labels:
+    app: fluent-bit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluent-bit
+subjects:
+  - kind: ServiceAccount
+    name: fluent-bit
+    namespace: logging   # the ServiceAccount lives in the "logging" namespace

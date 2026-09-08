@@ -1,0 +1,22 @@
+# ============================================================
+# LOGGING NAMESPACE
+#
+# What this is:
+#   A namespace is like a separate folder inside Kubernetes.
+#   The expense app lives in the "expense" namespace.
+#   Fluent Bit (infrastructure) lives here in "logging".
+#   This keeps them separate so they don't interfere with each other.
+#
+# Why "logging" namespace:
+#   Convention. AWS, Datadog, and most observability tools
+#   use a dedicated namespace so their DaemonSets have
+#   the right permissions without bleeding into the app namespace.
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    name: logging
+    managed-by: "kubectl"

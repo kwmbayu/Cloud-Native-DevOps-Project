@@ -1,0 +1,135 @@
+# ============================================================
+# FLUENT BIT DAEMONSET
+#
+# What a DaemonSet is:
+#   A DaemonSet is like a janitor in a hotel.
+#   Instead of one janitor for the whole building,
+#   there is one janitor per floor (one pod per EKS node).
+#   Kubernetes guarantees: every node gets exactly one Fluent Bit pod.
+#   If a new node is added (due to autoscaling), Kubernetes automatically
+#   adds a Fluent Bit pod to it. No manual action needed.
+#
+# Why Fluent Bit needs to run on every node:
+#   Log files are written to each node's local disk at /var/log/containers/.
+#   The Fluent Bit pod on that node mounts that directory (see volumes below)
+#   and reads the log files directly. A central Fluent Bit pod on one node
+#   cannot read the log files on other nodes.
+#
+# Image: public.ecr.aws/aws-observability/aws-for-fluent-bit:stable
+#   This is AWS's official Fluent Bit image, pre-built with the CloudWatch
+#   plugin. It lives in AWS's own public ECR registry — no Docker Hub needed.
+# ============================================================
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: logging
+  labels:
+    app: fluent-bit
+    k8s-app: fluent-bit
+
+spec:
+  selector:
+    matchLabels:
+      app: fluent-bit
+
+  # updateStrategy: RollingUpdate
+  # When you update the Fluent Bit config, Kubernetes replaces pods one at a time.
+  # No gap in log collection — the old pod keeps shipping while the new one starts.
+  updateStrategy:
+    type: RollingUpdate
+
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+        k8s-app: fluent-bit
+
+    spec:
+      # Use the Fluent Bit service account (wired to the IAM role via IRSA)
+      serviceAccountName: fluent-bit
+
+      # Tolerations: allow Fluent Bit to run on ANY node, including master/control-plane nodes
+      # Without this, Kubernetes might skip certain nodes that have "taints" (restrictions).
+      # Fluent Bit needs to run everywhere to collect all logs.
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+
+      # ── CONTAINERS ─────────────────────────────────────────
+      containers:
+        - name: fluent-bit
+          # AWS's official Fluent Bit image with CloudWatch plugin pre-installed
+          image: public.ecr.aws/aws-observability/aws-for-fluent-bit:stable
+          imagePullPolicy: Always
+
+          # ── RESOURCE LIMITS ──────────────────────────────
+          # Fluent Bit is very lightweight (written in C, not Java/Python).
+          # 50m CPU = 5% of one CPU core. 64MB RAM. Tiny footprint.
+          # Limits ensure it can't accidentally hog resources if logs explode.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+
+          # ── HEALTH CHECK PORT ────────────────────────────
+          # Fluent Bit exposes an HTTP server on port 2020 (configured above in ConfigMap).
+          # Kubernetes uses this to check if Fluent Bit is alive and healthy.
+          ports:
+            - containerPort: 2020
+              name: http
+              protocol: TCP
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # ── VOLUME MOUNTS ─────────────────────────────────
+          # Fluent Bit needs access to two things on the host node:
+          #   1. /var/log  — where ALL logs live (container logs, system logs)
+          #   2. fluent-bit-config — the ConfigMap we created (its instruction book)
+          volumeMounts:
+            # The node's /var/log directory — mounted read-only for safety
+            # Fluent Bit reads logs here but never writes to them
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+
+            # Fluent Bit's config file from the ConfigMap
+            - name: fluent-bit-config
+              mountPath: /fluent-bit/etc/
+
+            # Kubernetes container log symlinks — needed to follow symlinks in /var/log/containers/
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+
+      # ── VOLUMES ────────────────────────────────────────────
+      # hostPath: mount a directory from the EKS node's own filesystem
+      # configMap: mount the ConfigMap as files inside the container
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+
+        - name: fluent-bit-config
+          configMap:
+            name: fluent-bit-config
+
+      # Give Fluent Bit 10 seconds to finish shipping buffered logs before shutdown
+      terminationGracePeriodSeconds: 10
