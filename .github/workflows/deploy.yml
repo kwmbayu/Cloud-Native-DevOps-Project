@@ -106,34 +106,77 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # ── Step 7: Build the Docker image & push to ECR ─────
-      # This is the core build step.
+      # ── Step 7a: Set up QEMU for ARM cross-compilation ────
+      # SUSTAINABILITY PILLAR: EKS nodes now use AWS Graviton (ARM) processors
+      # to reduce energy use by 60% and cost by 20% vs Intel/AMD.
+      # ARM nodes can only run ARM Docker images, so we build for BOTH
+      # architectures (x86 and ARM) from one GitHub Actions runner (x86).
       #
-      # IMAGE TAG = the first 7 characters of the git commit hash.
-      # Example: if your commit hash is "a1b2c3d4e5f6...", the tag is "a1b2c3d".
-      # This way, every version of the app has a unique label.
-      # You can always look at a running pod and know exactly which
-      # commit of code it's running.
-      - name: Build, tag, and push Docker image to ECR
+      # The problem: GitHub's runners are x86 machines. Building an ARM
+      # image on an x86 machine requires emulation — QEMU handles this.
+      #
+      # QEMU analogy: it's like a translator app on your laptop that lets
+      # you run software designed for a different type of computer. The
+      # build takes a bit longer than native, but the result works perfectly.
+      #
+      # QEMU = Quick Emulator, open-source hardware emulator used widely
+      # in cloud infrastructure for cross-architecture tasks.
+      - name: Set up QEMU (ARM cross-compilation)
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64   # only enable ARM emulation — keeps it fast
+
+      # ── Step 7b: Set up Docker Buildx ────────────────────
+      # Buildx is Docker's next-generation build system that can build
+      # images for multiple CPU architectures at once.
+      #
+      # The difference between `docker build` and `docker buildx build`:
+      #   docker build       → builds for the current machine's arch only (x86)
+      #   docker buildx build → builds for MULTIPLE archs simultaneously
+      #
+      # The result is one image tag (e.g. expense-backend:a1b2c3d) that
+      # contains two variants: x86 and ARM. Kubernetes automatically
+      # downloads the correct variant for each node — you never think about it.
+      - name: Set up Docker Buildx
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        uses: docker/setup-buildx-action@v3
+
+      # ── Step 7c: Build multi-arch image & push to ECR ────
+      # Replaces the old single-arch `docker build` + `docker push`.
+      #
+      # IMAGE TAG = the git commit hash (same as before — unique per commit).
+      #
+      # --platform linux/amd64,linux/arm64:
+      #   Builds TWO versions of the image inside one manifest.
+      #   amd64 = x86 (Intel/AMD) — for local dev, CI testing
+      #   arm64 = ARM (Graviton)  — for EKS Graviton nodes in production
+      #
+      # --push: instead of saving the image locally, push it directly to ECR.
+      #   This is required for multi-arch — multi-arch manifests can't be
+      #   saved locally, only pushed to a registry.
+      #
+      # No `docker tag` or separate `docker push` needed:
+      #   The --tag flags and --push handle all of that atomically.
+      #
+      # Build time: ~2-3x longer than single-arch because we're building
+      #   twice (once native x86, once via QEMU for ARM). For a small
+      #   Node.js app this adds about 2-3 minutes.
+      - name: Build multi-arch image & push to ECR
         if: github.ref == 'refs/heads/master' && github.event_name == 'push'
         id: build-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          # Short SHA: first 7 chars of the git commit hash (e.g. "a1b2c3d")
           IMAGE_TAG:    ${{ github.sha }}
         run: |
-          # Build the image from the Dockerfile in the root of the repo
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            --tag $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            --push \
+            .
 
-          # Also tag as 'latest' so you can pull the most recent build easily
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-                     $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-          # Push both tags to ECR
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-          # Pass the tag to the deploy job
+          # Pass the tag to the deploy job (unchanged — same tag format)
           echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       # ── Step 8: Wait for ECR scan & gate on results ───────

@@ -22,11 +22,13 @@
 #   After any write, the app deletes the relevant Redis keys so the next
 #   request fetches fresh data from MySQL.
 #
-# Why cache.t3.micro:
-#   - 0.5 vCPU, 512 MB RAM
+# Why cache.t4g.micro (Graviton 2 ARM):
+#   - 0.5 vCPU, 512 MB RAM (same specs as t3.micro)
 #   - Handles ~65,000 connections
 #   - Enough for hundreds of concurrent app users
-#   - ~$12/month (the cheapest ElastiCache node — great for dev)
+#   - ~$11/month — 20% cheaper than cache.t3.micro (~$12/month)
+#   - 60% less energy than equivalent Intel/AMD chip (Sustainability Pillar)
+#   - Requires Redis 6.2+ — we use 7.1, so fully compatible
 #
 # Apply order: 00-vpc → 10-sg → 35-redis
 # ============================================================
@@ -96,7 +98,11 @@ resource "aws_elasticache_cluster" "redis" {
   cluster_id           = "${var.project_name}-${var.environment}-redis"
   engine               = "redis"
   engine_version       = "7.1"
-  node_type            = "cache.t3.micro"  # ~$12/month, 512MB RAM
+  # cache.t4g.micro = Graviton 2 (ARM), 0.5 vCPU, 512MB RAM
+  # ~$11/month — same specs as cache.t3.micro but ARM-based:
+  #   20% cheaper, 60% less energy than cache.t3.micro
+  # Requires Redis 6.2+ (we run 7.1 ✅)
+  node_type            = "cache.t4g.micro"
   num_cache_nodes      = 1
 
   # Redis default port

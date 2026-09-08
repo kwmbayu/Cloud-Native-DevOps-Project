@@ -37,24 +37,39 @@ module "eks" {
   # ── NODE GROUP DEFAULTS ──────────────────────────────────────
   # Settings shared across all node groups unless overridden.
   #
+  # WHY GRAVITON (ARM)?
+  #   AWS Graviton processors are ARM-based chips designed by Amazon.
+  #   Compared to equivalent Intel/AMD instances:
+  #     • 20% cheaper per hour for the same vCPU/RAM
+  #     • 60% less energy consumption (same workload, greener footprint)
+  #     • Same or better performance for Node.js, containers, and general workloads
+  #   Node.js runs natively on ARM64 — no code changes needed.
+  #   Docker images must be built for linux/arm64 (see .github/workflows/deploy.yml).
+  #
   # instance_types: the list of EC2 instance types EKS can choose from.
   # For SPOT, AWS recommends 5+ instance types — more options means
   # EKS can pull from more SPOT capacity pools, making interruptions rarer.
   #
-  # All types here are "large" (2 vCPU, 8GB RAM) — same shape, different
-  # hardware generations and manufacturers. Kubernetes doesn't care which
-  # physical server it runs on, so we give it as many to choose from as possible.
+  # All types here are "large" size on the m or r Graviton family.
+  # Same general shape (2-4 vCPU, 8-16GB RAM), different generations and
+  # memory ratios — gives maximum SPOT pool diversity while staying on Graviton.
+  #
+  # Graviton generations:
+  #   m6g / r6g — Graviton 2 (2021) — very large SPOT pools
+  #   m7g / r7g — Graviton 3 (2022) — good pools, ~15% faster than Graviton 2
+  #   m8g        — Graviton 4 (2024) — newest, smaller pools but adds diversity
   eks_managed_node_group_defaults = {
     instance_types = [
-      # Intel (x86)
-      "m6i.large",   # 6th gen Intel — newest, best price/performance
-      "m5.large",    # 5th gen Intel — very common, large SPOT pool
-      "m5n.large",   # m5 with enhanced networking
-      "m5zn.large",  # m5 with high-frequency CPU
-      # AMD (x86 — slightly cheaper than Intel, same performance for Node.js)
-      "m6a.large",   # 6th gen AMD — good SPOT availability
-      "m5a.large",   # 5th gen AMD — very large SPOT pool
-      "m5ad.large",  # m5a with NVMe storage
+      # ── Graviton 2 — largest SPOT pools ──
+      "m6g.large",   # Graviton 2: 2vCPU, 8GB  — direct m5.large replacement
+      "m6gd.large",  # Graviton 2: 2vCPU, 8GB + NVMe local disk
+      "r6g.large",   # Graviton 2: 2vCPU, 16GB — memory-optimized, adds pool diversity
+      # ── Graviton 3 — next generation ──
+      "m7g.large",   # Graviton 3: 2vCPU, 8GB  — direct m6i.large replacement
+      "m7gd.large",  # Graviton 3: 2vCPU, 8GB + NVMe local disk
+      "r7g.large",   # Graviton 3: 2vCPU, 16GB — memory-optimized, adds pool diversity
+      # ── Graviton 4 — newest generation ──
+      "m8g.large",   # Graviton 4: 2vCPU, 8GB  — best performance/price, newest
     ]
   }
 
@@ -104,21 +119,25 @@ module "eks" {
     # system pods (CoreDNS, kube-proxy, Fluent Bit) even if every
     # SPOT instance is simultaneously reclaimed.
     #
-    # Why t3.medium (not m5.large)?
+    # Why t4g.medium (not m7g.large)?
     #   This node is not meant to run app pods — it's a safety net.
-    #   t3.medium (2 vCPU, 4GB RAM) is enough for system overhead.
+    #   t4g.medium (2 vCPU, 4GB RAM) is enough for system overhead.
     #   Keeping it small keeps the On-Demand cost minimal.
     #
-    # Cost: t3.medium On-Demand = ~$0.042/hr = ~$30/month (1 node always on)
-    # vs. the alternative: 2 On-Demand m5.large = ~$140/month
-    # Savings vs. all On-Demand: roughly $110/month
+    #   t4g = Graviton 2 burstable — the "t" class (like t3) but on ARM.
+    #   Same concept as t3.medium but 20% cheaper and 60% less energy.
+    #
+    # Cost: t4g.medium On-Demand = ~$0.034/hr = ~$25/month (1 node always on)
+    #   vs. t3.medium:                            ~$30/month
+    #   vs. the alternative: 2 On-Demand m7g.large = ~$190/month
+    # Savings vs. all On-Demand: roughly $165/month
     on_demand = {
       min_size     = 1   # always keep exactly 1 On-Demand node running
       max_size     = 2   # allow a second if SPOT is fully unavailable
       desired_size = 1
 
       capacity_type  = "ON_DEMAND"
-      instance_types = ["t3.medium"]   # override defaults — smaller is fine here
+      instance_types = ["t4g.medium"]  # Graviton 2: 2vCPU, 4GB — replaces t3.medium
 
       iam_role_additional_policies = {
         AmazonEBSCSIDriverPolicy          = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
