@@ -88,23 +88,12 @@ resource "aws_security_group" "ingress" {
 
 # --- Security Group Rules ---
 
-resource "aws_security_group_rule" "bastion_public" {
-  type              = "ingress"
-  from_port         = 22
-  to_port           = 22
-  protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.bastion.id
-}
+# REMOVED: bastion_public — SSH :22 was open to 0.0.0.0/0 (the entire internet).
+# Replaced by AWS Systems Manager Session Manager: no open ports needed.
+# To access EKS nodes: aws ssm start-session --target <instance-id>
 
-resource "aws_security_group_rule" "cluster_bastion" {
-  type                     = "ingress"
-  from_port                = 443
-  to_port                  = 443
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.bastion.id
-  security_group_id        = aws_security_group.cluster.id
-}
+# REMOVED: cluster_bastion — EKS cluster no longer accepts connections from Bastion.
+# Admin access to the cluster API now goes through IAM + kubectl directly.
 
 resource "aws_security_group_rule" "cluster_node" {
   type                     = "ingress"
@@ -133,14 +122,12 @@ resource "aws_security_group_rule" "node_vpc" {
   security_group_id = aws_security_group.node.id
 }
 
-resource "aws_security_group_rule" "db_bastion" {
-  type                     = "ingress"
-  from_port                = 3306
-  to_port                  = 3306
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.bastion.id
-  security_group_id        = aws_security_group.db.id
-}
+# REMOVED: db_bastion — RDS no longer accepts :3306 from Bastion SG.
+# To admin the database, use SSM port forwarding through an EKS node:
+#   aws ssm start-session --target <node-id> \
+#     --document-name AWS-StartPortForwardingSessionToRemoteHost \
+#     --parameters '{"host":["<rds-endpoint>"],"portNumber":["3306"],"localPortNumber":["3306"]}'
+# Then connect your local MySQL client to 127.0.0.1:3306
 
 resource "aws_security_group_rule" "db_node" {
   type                     = "ingress"
