@@ -54,8 +54,10 @@ module "db" {
   # AWS takes one last complete backup BEFORE deleting anything.
   # Like hitting "Save" before closing a document forever.
   # Name format: expense-dev-final-<timestamp> (set at apply time)
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "${var.project_name}-${var.environment}-final"
+  skip_final_snapshot              = false
+  # The module uses _prefix — AWS appends a timestamp, producing:
+  # expense-dev-final-20260908143022
+  final_snapshot_identifier_prefix = "${var.project_name}-${var.environment}-final"
 
   # MULTI-AZ NOTE (prod recommendation):
   # multi_az = true  would run a live standby copy in a second AZ.

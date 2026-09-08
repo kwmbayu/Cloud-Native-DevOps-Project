@@ -31,7 +31,6 @@ resource "aws_security_group" "db" {
 # then re-apply 10-sg to remove the SG from AWS.
 #
 # See docs/SSM_ACCESS.md for how to connect to EKS nodes via SSM.
-}
 
 # --- VPN Security Group ---
 resource "aws_security_group" "vpn" {

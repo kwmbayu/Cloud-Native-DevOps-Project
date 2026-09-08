@@ -99,15 +99,16 @@ variable "enable_reserved_instance" {
 # This data source is ALWAYS computed (even when enable_reserved_instance=false),
 # but it only reads from AWS — it doesn't purchase anything.
 # The actual purchase only happens when count = 1 on the resource below.
-data "aws_rds_reserved_db_instances_offering" "mysql_1yr" {
+data "aws_rds_reserved_instance_offering" "mysql_1yr" {
   # Must match the instance_class in main.tf EXACTLY.
   # If you ever upsize the database (e.g., to db.t3.small), you'd need
   # a new RI for the new class — the old one won't apply.
   db_instance_class = "db.t3.micro"
 
-  # 31536000 seconds = 60 × 60 × 24 × 365 = exactly 1 year
+  # Duration is a NUMBER (seconds), not a string.
+  # 31536000 = 60 × 60 × 24 × 365 = exactly 1 year
   # AWS only offers 1-year (31536000) or 3-year (94608000) terms.
-  duration = "31536000"
+  duration = 31536000
 
   # Must match multi_az setting in main.tf (currently false for dev cost savings)
   multi_az = false
@@ -130,17 +131,17 @@ data "aws_rds_reserved_db_instances_offering" "mysql_1yr" {
 # Switching from count=0 to count=1: triggers a PURCHASE → ✅ intentional
 # Switching from count=1 to count=0: removes from Terraform state only →
 #   ⚠️  AWS continues billing until the 12-month term ends!
-resource "aws_rds_reserved_db_instance" "mysql" {
+resource "aws_rds_reserved_instance" "mysql" {
   count = var.enable_reserved_instance ? 1 : 0
 
   # The offering ID comes from the data source above.
   # It encodes: db.t3.micro + MySQL + 1yr + No Upfront + us-east-1 + single-AZ
-  reserved_db_instances_offering_id = data.aws_rds_reserved_db_instances_offering.mysql_1yr.offering_id
+  offering_id = data.aws_rds_reserved_instance_offering.mysql_1yr.offering_id
 
   # How many instances this reservation covers.
   # 1 = covers the single expense-dev RDS instance.
-  # If you later add a read replica, you'd need count=2 to cover both.
-  db_instance_count = 1
+  # If you later add a read replica, you'd need instance_count = 2.
+  instance_count = 1
 
   tags = merge(var.common_tags, {
     Name        = "${var.project_name}-${var.environment}-mysql-ri"
@@ -157,15 +158,15 @@ resource "aws_rds_reserved_db_instance" "mysql" {
 output "rds_reserved_instance" {
   description = "Details of the purchased RDS Reserved Instance (null when disabled)"
   value = var.enable_reserved_instance ? {
-    offering_id      = data.aws_rds_reserved_db_instances_offering.mysql_1yr.offering_id
+    offering_id      = data.aws_rds_reserved_instance_offering.mysql_1yr.offering_id
     instance_class   = "db.t3.micro"
     term             = "1 year"
     payment_type     = "No Upfront"
     monthly_rate     = "$8.03"
     monthly_savings  = "$4.38 vs On-Demand ($12.41/month)"
     annual_savings   = "$52.56"
-    reservation_id   = try(aws_rds_reserved_db_instance.mysql[0].id, "not yet purchased")
-    status           = try(aws_rds_reserved_db_instance.mysql[0].state, "not yet purchased")
+    reservation_id   = try(aws_rds_reserved_instance.mysql[0].id, "not yet purchased")
+    status           = try(aws_rds_reserved_instance.mysql[0].state, "not yet purchased")
   } : {
     status = "Reserved Instance disabled — enable_reserved_instance = false"
     action = "Set enable_reserved_instance=true when project is stable (12+ months planned)"
