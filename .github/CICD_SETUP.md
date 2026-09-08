@@ -37,6 +37,29 @@ In the AWS Console:
 3. Attach these policies:
    - `AmazonEC2ContainerRegistryPowerUser` — allows docker push to ECR
    - `AmazonEKSClusterPolicy` — allows kubectl/helm to talk to EKS
+   - Create a custom inline policy for CloudFront + SSM + EKS:
+     ```json
+     {
+       "Version": "2012-10-17",
+       "Statement": [
+         {
+           "Effect": "Allow",
+           "Action": ["eks:DescribeCluster"],
+           "Resource": "arn:aws:eks:us-east-1:258464457244:cluster/expense-dev"
+         },
+         {
+           "Effect": "Allow",
+           "Action": ["ssm:GetParameter"],
+           "Resource": "arn:aws:ssm:us-east-1:258464457244:parameter/expense/dev/*"
+         },
+         {
+           "Effect": "Allow",
+           "Action": ["cloudfront:CreateInvalidation"],
+           "Resource": "arn:aws:cloudfront::258464457244:distribution/*"
+         }
+       ]
+     }
+     ```
 4. Create an **Access Key** (type: Application running outside AWS)
 5. Download the CSV — you'll need the key ID and secret
 

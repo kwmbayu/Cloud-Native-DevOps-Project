@@ -223,3 +223,35 @@ jobs:
           echo ""
           echo "── Service endpoints ──"
           kubectl get svc -n expense
+
+      # ── Step 7: Invalidate CloudFront cache ──────────────
+      # After deploying new code, old static files (JS, CSS, images)
+      # might still be cached at CloudFront edge locations worldwide.
+      # Without invalidation, users in London could get the old app
+      # for up to 24 hours while users in Virginia see the new version.
+      #
+      # This step tells CloudFront: "clear your cache everywhere — go
+      # fetch fresh files from the origin (ALB) for the next request."
+      #
+      # /* = invalidate everything. For large sites you'd be more
+      # specific (/js/*, /css/*) to save the $0.005/path cost, but
+      # first 1000 invalidations/month are FREE.
+      #
+      # The distribution ID is stored in SSM by the 65-cdn layer.
+      # If 65-cdn hasn't been applied yet, this step is skipped gracefully.
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(aws ssm get-parameter \
+            --name /expense/dev/cloudfront_distribution_id \
+            --query Parameter.Value \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$DIST_ID" ]; then
+            echo "ℹ️  CloudFront not yet deployed (65-cdn layer not applied) — skipping cache invalidation"
+          else
+            echo "🌍 Invalidating CloudFront cache for distribution: $DIST_ID"
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/*"
+            echo "✅ Cache invalidation submitted — edge locations will refresh within ~60 seconds"
+          fi

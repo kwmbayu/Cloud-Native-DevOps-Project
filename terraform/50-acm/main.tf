@@ -76,45 +76,31 @@ resource "aws_acm_certificate_validation" "expense" {
 }
 
 
-# ── ROUTE 53 — POINT DOMAIN TO ALB ─────────────────────────
-# Once the cert is issued, we also need the domain to actually point
-# to the ALB. An alias A record is like a CNAME but works for root domains.
+# ── ROUTE 53 A RECORDS — MOVED TO 65-CDN LAYER ──────────────
+# The DNS A records for kwmbayu.com and www.kwmbayu.com used to live
+# here, pointing at the ALB directly.
 #
-# kwmbayu.com     → ALB DNS name (alias A record)
-# www.kwmbayu.com → ALB DNS name (alias A record)
+# They have been moved to terraform/65-cdn/route53.tf, where they
+# now point at CloudFront instead of the ALB.
 #
-# The ALB DNS name is stored in SSM by the 60-ingress-alb layer.
-# We read it here to create the Route 53 records.
-data "aws_ssm_parameter" "alb_dns_name" {
-  name = "/${var.project_name}/${var.environment}/alb_dns_name"
-}
-
-data "aws_ssm_parameter" "alb_zone_id" {
-  name = "/${var.project_name}/${var.environment}/alb_zone_id"
-}
-
-# kwmbayu.com → ALB
-resource "aws_route53_record" "root" {
-  zone_id = var.zone_id
-  name    = var.zone_name
-  type    = "A"
-
-  alias {
-    name                   = data.aws_ssm_parameter.alb_dns_name.value
-    zone_id                = data.aws_ssm_parameter.alb_zone_id.value
-    evaluate_target_health = true
-  }
-}
-
-# www.kwmbayu.com → ALB
-resource "aws_route53_record" "www" {
-  zone_id = var.zone_id
-  name    = "www.${var.zone_name}"
-  type    = "A"
-
-  alias {
-    name                   = data.aws_ssm_parameter.alb_dns_name.value
-    zone_id                = data.aws_ssm_parameter.alb_zone_id.value
-    evaluate_target_health = true
-  }
-}
+# Traffic flow after 65-cdn is applied:
+#   kwmbayu.com → CloudFront → origin.kwmbayu.com → ALB → EKS
+#
+# If you are running WITHOUT CloudFront (65-cdn not applied), you can
+# temporarily add these records back here to test:
+#   data "aws_ssm_parameter" "alb_dns_name" {
+#     name = "/${var.project_name}/${var.environment}/alb_dns_name"
+#   }
+#   data "aws_ssm_parameter" "alb_zone_id" {
+#     name = "/${var.project_name}/${var.environment}/alb_zone_id"
+#   }
+#   resource "aws_route53_record" "root" { ... }
+#   resource "aws_route53_record" "www"  { ... }
+#
+# MIGRATION NOTE (existing deployments only):
+#   If you applied 50-acm before adding 65-cdn, Terraform state still
+#   thinks it owns those Route 53 records. Before applying 65-cdn, remove
+#   them from 50-acm's state (does NOT delete from AWS):
+#     terraform -chdir=terraform/50-acm state rm aws_route53_record.root
+#     terraform -chdir=terraform/50-acm state rm aws_route53_record.www
+#   Then: terraform apply in 65-cdn creates them pointing at CloudFront.
