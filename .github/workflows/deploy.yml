@@ -136,6 +136,96 @@ jobs:
           # Pass the tag to the deploy job
           echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      # ── Step 8: Wait for ECR scan & gate on results ───────
+      # ECR automatically scans every pushed image against the CVE
+      # database (scan_on_push = true in Terraform). The scan takes
+      # about 30-90 seconds to complete after the push.
+      #
+      # This step:
+      #   1. Polls ECR every 15 seconds until the scan status is COMPLETE
+      #   2. Reads the vulnerability counts (CRITICAL, HIGH, MEDIUM, LOW)
+      #   3. FAILS the pipeline if any CRITICAL vulnerabilities are found
+      #      → the deploy job (Job 2) will not run, protecting the cluster
+      #
+      # Analogy: like a food safety inspection before a restaurant opens.
+      # The kitchen (docker build) is done, but the inspector (ECR scan)
+      # has to sign off before the doors open (deploy to EKS).
+      #
+      # Why only block on CRITICAL (not HIGH)?
+      #   CRITICAL = actively exploitable with known public exploits, often
+      #   with no user interaction needed. These are genuinely dangerous.
+      #   HIGH = serious but harder to exploit — worth knowing about,
+      #   but blocking deploys on HIGH would cause too many false alarms
+      #   for a dev environment. Tighten to HIGH for production.
+      - name: Check ECR scan results
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          echo "⏳ Waiting for ECR vulnerability scan to complete..."
+          REPO="${{ env.ECR_REPOSITORY }}"
+          TAG="$IMAGE_TAG"
+          MAX_WAIT=120   # seconds — scan usually completes in 30-90s
+          ELAPSED=0
+
+          # Poll until scan status is COMPLETE (or we time out)
+          while true; do
+            STATUS=$(aws ecr describe-image-scan-findings \
+              --repository-name "$REPO" \
+              --image-id imageTag="$TAG" \
+              --query 'imageScanStatus.status' \
+              --output text 2>/dev/null || echo "IN_PROGRESS")
+
+            if [ "$STATUS" = "COMPLETE" ]; then
+              echo "✅ Scan complete."
+              break
+            fi
+
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "⚠️  Scan did not complete within ${MAX_WAIT}s — proceeding anyway."
+              break
+            fi
+
+            echo "   Scan status: $STATUS — waiting 15s... (${ELAPSED}s elapsed)"
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
+          done
+
+          # Read the vulnerability counts from the completed scan
+          FINDINGS=$(aws ecr describe-image-scan-findings \
+            --repository-name "$REPO" \
+            --image-id imageTag="$TAG" \
+            --query 'imageScanFindings.findingSeverityCounts' \
+            --output json 2>/dev/null || echo '{}')
+
+          CRITICAL=$(echo "$FINDINGS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('CRITICAL',0))")
+          HIGH=$(echo     "$FINDINGS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('HIGH',0))")
+          MEDIUM=$(echo   "$FINDINGS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('MEDIUM',0))")
+          LOW=$(echo      "$FINDINGS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('LOW',0))")
+
+          echo ""
+          echo "📊 Scan results for $REPO:$TAG"
+          echo "   🔴 CRITICAL : $CRITICAL"
+          echo "   🟠 HIGH     : $HIGH"
+          echo "   🟡 MEDIUM   : $MEDIUM"
+          echo "   🟢 LOW      : $LOW"
+          echo ""
+          echo "🔗 Full report: https://console.aws.amazon.com/ecr/repositories/private/${{ env.AWS_ACCOUNT_ID }}/$REPO/_/image/$TAG/scan-results"
+
+          # Block the deploy if CRITICAL vulnerabilities were found.
+          # CRITICAL = known public exploits, no user interaction needed.
+          # For production: change the condition to also block on HIGH > 0.
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo ""
+            echo "🚫 DEPLOY BLOCKED: $CRITICAL CRITICAL vulnerability/vulnerabilities found."
+            echo "   Fix the vulnerabilities in the Dockerfile (update base image or packages)"
+            echo "   then push a new commit to retry."
+            exit 1
+          fi
+
+          echo "✅ No CRITICAL vulnerabilities — proceeding to deploy."
+
 
 # ═══════════════════════════════════════════════════════════════
 # JOB 2: DEPLOY TO EKS

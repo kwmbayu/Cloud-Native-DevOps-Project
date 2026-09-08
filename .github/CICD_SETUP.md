@@ -56,6 +56,11 @@ In the AWS Console:
            "Effect": "Allow",
            "Action": ["cloudfront:CreateInvalidation"],
            "Resource": "arn:aws:cloudfront::258464457244:distribution/*"
+         },
+         {
+           "Effect": "Allow",
+           "Action": ["ecr:DescribeImageScanFindings"],
+           "Resource": "arn:aws:ecr:us-east-1:258464457244:repository/expense-*"
          }
        ]
      }
