@@ -3,6 +3,8 @@ variable "common_tags" {
     Project     = "expense"
     Environment = "dev"
     Terraform   = "true"
+    Owner       = "kwmbayu"
+    CostCenter  = "cloud-native-devops"
   }
 }
 

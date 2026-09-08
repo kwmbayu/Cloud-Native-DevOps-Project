@@ -8,10 +8,12 @@ variable "environment" {
 
 variable "common_tags" {
   default = {
-    Project = "expense"
+    Project     = "expense"
     Environment = "dev"
-    Terraform = "true"
-    Component = "ingress-alb"
+    Terraform   = "true"
+    Component   = "ingress-alb"
+    Owner       = "kwmbayu"
+    CostCenter  = "cloud-native-devops"
   }
 }
 

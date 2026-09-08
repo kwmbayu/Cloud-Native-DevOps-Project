@@ -12,5 +12,7 @@ variable "common_tags" {
     Environment = "dev"
     Terraform   = "true"
     Component   = "ingress-alb"
+    Owner       = "kwmbayu"
+    CostCenter  = "cloud-native-devops"
   }
 }

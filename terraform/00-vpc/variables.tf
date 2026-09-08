@@ -7,11 +7,13 @@ variable "environment" {
 }
 
 variable "common_tags" {
-    default = {
-        Project = "expense"
-        Environment = "dev"
-        Terraform = "true"
-    }
+  default = {
+    Project     = "expense"
+    Environment = "dev"
+    Terraform   = "true"
+    Owner       = "kwmbayu"      # who to contact when something in this layer breaks
+    CostCenter  = "cloud-native-devops"  # links AWS costs to this project in billing reports
+  }
 }
 
 variable "public_subnet_cidrs" {
