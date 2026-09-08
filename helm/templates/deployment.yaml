@@ -21,6 +21,26 @@ spec:
         project: expense
         tier: app
     spec:
+      # ── NODE AFFINITY (Cost Optimization Pillar) ─────────────
+      # Tells Kubernetes WHERE to schedule this pod.
+      # We want app pods on SPOT nodes (cheap) but allow On-Demand as fallback.
+      #
+      # preferredDuringScheduling = "try this, but don't refuse if it's not possible"
+      # (vs. requiredDuringScheduling = "only schedule here — error if impossible")
+      #
+      # Weight 80: strong preference for SPOT nodes — app pods run cheap by default.
+      # If all SPOT nodes are full or unavailable, Kubernetes falls back to the
+      # On-Demand node automatically. No manual intervention needed.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: capacity-type
+                    operator: In
+                    values: ["spot"]
+
       containers:
       - name: backend
         imagePullPolicy: Always
