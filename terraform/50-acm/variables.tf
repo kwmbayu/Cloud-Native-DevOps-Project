@@ -16,9 +16,10 @@ variable "common_tags" {
 }
 
 variable "zone_name" {
-  default = "eswarsaikumar.site"
+  default = "kwmbayu.com"
 }
 
 variable "zone_id" {
-  default = "Z049815217OT8LASP86LW"
+  # Route 53 hosted zone created automatically when kwmbayu.com was registered
+  default = "Z01342433HV3BZ4DNL5IX"
 }

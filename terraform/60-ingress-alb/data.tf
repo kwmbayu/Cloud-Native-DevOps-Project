@@ -9,3 +9,8 @@ data "aws_ssm_parameter" "public_subnet_ids" {
 data "aws_ssm_parameter" "vpc_id" {
   name = "/${var.project_name}/${var.environment}/vpc_id"
 }
+
+# ACM certificate ARN — written by 50-acm layer after cert is issued
+data "aws_ssm_parameter" "acm_certificate_arn" {
+  name = "/${var.project_name}/${var.environment}/acm_certificate_arn"
+}
